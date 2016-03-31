@@ -1,12 +1,12 @@
 #!/usr/bin/python
 # #
-# Copyright 2012-2015 Ghent University
+# Copyright 2012-2016 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
 # with support of Ghent University (http://ugent.be/hpc),
 # the Flemish Supercomputer Centre (VSC) (https://vscentrum.be/nl/en),
-# the Hercules foundation (http://www.herculesstichting.be/in_English)
+# Flemish Research Foundation (FWO) (http://www.fwo.be/en)
 # and the Department of Economy, Science and Innovation (EWI) (http://www.ewi-vlaanderen.be/en).
 #
 # http://github.com/hpcugent/easybuild
@@ -39,13 +39,13 @@ from vsc.utils import fancylogger
 
 # initialize EasyBuild logging, so we disable it
 from easybuild.tools.build_log import EasyBuildError
-from easybuild.tools.config import set_tmpdir
+from easybuild.tools.options import set_tmpdir
 
 # set plain text key ring to be used, so a GitHub token stored in it can be obtained without having to provide a password
 try:
     import keyring
     keyring.set_keyring(keyring.backends.file.PlaintextKeyring())
-except ImportError:
+except (ImportError, AttributeError):
     pass
 
 # disable all logging to significantly speed up tests
@@ -62,6 +62,7 @@ import test.framework.easyconfigparser as ep
 import test.framework.easyconfigformat as ef
 import test.framework.ebconfigobj as ebco
 import test.framework.easyconfigversion as ev
+import test.framework.environment as env
 import test.framework.docs as d
 import test.framework.filetools as f
 import test.framework.format_convert as f_c
@@ -83,8 +84,10 @@ import test.framework.systemtools as s
 import test.framework.toolchain as tc
 import test.framework.toolchainvariables as tcv
 import test.framework.toy_build as t
+import test.framework.type_checking as et
 import test.framework.tweak as tw
 import test.framework.variables as v
+import test.framework.yeb as y
 
 
 # make sure temporary files can be created/used
@@ -104,7 +107,7 @@ log = fancylogger.getLogger()
 # call suite() for each module and then run them all
 # note: make sure the options unit tests run first, to avoid running some of them with a readily initialized config
 tests = [gen, bl, o, r, ef, ev, ebco, ep, e, mg, m, mt, f, run, a, robot, b, v, g, tcv, tc, t, c, s, l, f_c, sc, tw,
-         p, i, pkg, d]
+         p, i, pkg, d, env, et, y]
 
 SUITE = unittest.TestSuite([x.suite() for x in tests])
 

@@ -1,11 +1,11 @@
 # #
-# Copyright 2009-2015 Ghent University
+# Copyright 2009-2016 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
 # with support of Ghent University (http://ugent.be/hpc),
 # the Flemish Supercomputer Centre (VSC) (https://vscentrum.be/nl/en),
-# the Hercules foundation (http://www.herculesstichting.be/in_English)
+# Flemish Research Foundation (FWO) (http://www.fwo.be/en)
 # and the Department of Economy, Science and Innovation (EWI) (http://www.ewi-vlaanderen.be/en).
 #
 # http://github.com/hpcugent/easybuild
@@ -36,6 +36,7 @@ Documentation-related functionality
 import copy
 import inspect
 import os
+from vsc.utils.docs import mk_rst_table
 
 from easybuild.framework.easyconfig.default import DEFAULT_CONFIG, HIDDEN, sorted_categories
 from easybuild.framework.easyconfig.easyconfig import get_easyblock_class
@@ -271,36 +272,3 @@ def gen_easyblock_doc_section_rst(eb_class, path_to_examples, common_params, doc
         lines.append('') # empty line after literal block
 
     return '\n'.join(lines)
-
-
-def mk_rst_table(titles, values):
-    """
-    Returns an rst table with given titles and values (a nested list of string values for each column)
-    """
-    num_col = len(titles)
-    table = []
-    col_widths = []
-    tmpl = []
-    line= []
-
-    # figure out column widths
-    for i in range(0, num_col):
-        col_widths.append(det_col_width(values[i], titles[i]))
-
-        # make line template
-        tmpl.append('{' + str(i) + ':{c}<' + str(col_widths[i]) + '}')
-        line.append('') # needed for table line
-
-    line_tmpl = '   '.join(tmpl)
-    table_line = line_tmpl.format(*line, c="=")
-
-    table.append(table_line)
-    table.append(line_tmpl.format(*titles, c=' '))
-    table.append(table_line)
-
-    for i in range(0, len(values[0])):
-        table.append(line_tmpl.format(*[v[i] for v in values], c=' '))
-
-    table.extend([table_line, ''])
-
-    return table

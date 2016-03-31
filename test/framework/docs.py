@@ -1,11 +1,11 @@
 # #
-# Copyright 2012-2015 Ghent University
+# Copyright 2012-2016 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
 # with support of Ghent University (http://ugent.be/hpc),
 # the Flemish Supercomputer Centre (VSC) (https://vscentrum.be/nl/en),
-# the Hercules foundation (http://www.herculesstichting.be/in_English)
+# Flemish Research Foundation (FWO) (http://www.fwo.be/en)
 # and the Department of Economy, Science and Innovation (EWI) (http://www.ewi-vlaanderen.be/en).
 #
 # http://github.com/hpcugent/easybuild
@@ -25,39 +25,18 @@
 """
 Unit tests for docs.py.
 """
-
+import inspect
 import os
 import re
 import sys
-import inspect
-
-from easybuild.tools.docs import gen_easyblocks_overview_rst, mk_rst_table
-from easybuild.tools.utilities import import_available_modules
-from test.framework.utilities import EnhancedTestCase, init_config
 from unittest import TestLoader, main
 
+from easybuild.framework.easyconfig.licenses import license_documentation
+from easybuild.tools.docs import gen_easyblocks_overview_rst
+from easybuild.tools.utilities import import_available_modules
+from test.framework.utilities import EnhancedTestCase, init_config
+
 class DocsTest(EnhancedTestCase):
-
-    def test_rst_table(self):
-        """ Test mk_rst_table function """
-        entries = [['one', 'two', 'three']]
-        t = 'This title is longer than the entries in the column'
-        titles = [t]
-
-        # small table
-        table = '\n'.join(mk_rst_table(titles, entries))
-        check = '\n'.join([
-            '=' * len(t),
-            t,
-            '=' * len(t),
-            'one' + ' ' * (len(t) - 3),
-            'two' + ' ' * (len(t) -3),
-            'three' + ' ' * (len(t) - 5),
-            '=' * len(t),
-            '',
-        ])
-
-        self.assertEqual(table, check)
 
     def test_gen_easyblocks(self):
         """ Test gen_easyblocks_overview_rst function """
@@ -84,13 +63,13 @@ class DocsTest(EnhancedTestCase):
             '',
             "Commonly used easyconfig parameters with ``ConfigureMake`` easyblock",
             "--------------------------------------------------------------------",
-            "====================   ================================================================",
-            "easyconfig parameter   description                                                     ",
-            "====================   ================================================================",
-            "configopts             Extra options passed to configure (default already has --prefix)",
-            "buildopts              Extra options passed to make step (default already has -j X)    ",
-            "installopts            Extra options for installation                                  ",
-            "====================   ================================================================",
+            "====================    ================================================================",
+            "easyconfig parameter    description                                                     ",
+            "====================    ================================================================",
+            "configopts              Extra options passed to configure (default already has --prefix)",
+            "buildopts               Extra options passed to make step (default already has -j X)    ",
+            "installopts             Extra options for installation                                  ",
+            "====================    ================================================================",
         ])
 
         self.assertTrue(check_configuremake in ebdoc)
@@ -109,6 +88,12 @@ class DocsTest(EnhancedTestCase):
 
         regex = re.compile(pattern)
         self.assertTrue(re.search(regex, ebdoc), "Pattern %s found in %s" % (regex.pattern, ebdoc))
+
+    def test_license_docs(self):
+        """Test license_documentation function."""
+        lic_docs = license_documentation()
+        gplv3 = "GPLv3: The GNU General Public License"
+        self.assertTrue(gplv3 in lic_docs, "%s found in: %s" % (gplv3, lic_docs))
 
 
 def suite():

@@ -1,11 +1,11 @@
 # #
-# Copyright 2012-2015 Ghent University
+# Copyright 2012-2016 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
 # with support of Ghent University (http://ugent.be/hpc),
 # the Flemish Supercomputer Centre (VSC) (https://vscentrum.be/nl/en),
-# the Hercules foundation (http://www.herculesstichting.be/in_English)
+# Flemish Research Foundation (FWO) (http://www.fwo.be/en)
 # and the Department of Economy, Science and Innovation (EWI) (http://www.ewi-vlaanderen.be/en).
 #
 # http://github.com/hpcugent/easybuild
@@ -36,11 +36,10 @@ import math
 import os
 import subprocess
 
-import easybuild.tools.config as config
 from easybuild.framework.easyblock import get_easyblock_instance
 from easybuild.framework.easyconfig.easyconfig import ActiveMNS
 from easybuild.tools.build_log import EasyBuildError
-from easybuild.tools.config import get_repository, get_repositorypath
+from easybuild.tools.config import build_option, get_repository, get_repositorypath
 from easybuild.tools.module_naming_scheme.utilities import det_full_ec_version
 from easybuild.tools.job.backend import job_backend
 from easybuild.tools.repository.repository import init_repository
@@ -49,9 +48,11 @@ from vsc.utils import fancylogger
 
 _log = fancylogger.getLogger('parallelbuild', fname=False)
 
+
 def _to_key(dep):
     """Determine key for specified dependency."""
     return ActiveMNS().det_full_module_name(dep)
+
 
 def build_easyconfigs_in_parallel(build_command, easyconfigs, output_dir='easybuild-build', prepare_first=True):
     """
@@ -85,19 +86,21 @@ def build_easyconfigs_in_parallel(build_command, easyconfigs, output_dir='easybu
     # keep track of which job builds which module
     module_to_job = {}
 
-    for ec in easyconfigs:
+    for easyconfig in easyconfigs:
         # this is very important, otherwise we might have race conditions
         # e.g. GCC-4.5.3 finds cloog.tar.gz but it was incorrectly downloaded by GCC-4.6.3
         # running this step here, prevents this
         if prepare_first:
-            prepare_easyconfig(ec)
+            prepare_easyconfig(easyconfig)
 
         # the new job will only depend on already submitted jobs
-        _log.info("creating job for ec: %s" % str(ec))
-        new_job = create_job(active_job_backend, build_command, ec, output_dir=output_dir)
+        _log.info("creating job for ec: %s" % easyconfig['ec'])
+        new_job = create_job(active_job_backend, build_command, easyconfig, output_dir=output_dir)
 
-        # sometimes unresolved_deps will contain things, not needed to be build
-        dep_mod_names = map(ActiveMNS().det_full_module_name, ec['unresolved_deps'])
+        # filter out dependencies marked as external modules
+        deps = [d for d in easyconfig['ec'].all_dependencies if not d.get('external_module', False)]
+
+        dep_mod_names = map(ActiveMNS().det_full_module_name, deps)
         job_deps = [module_to_job[dep] for dep in dep_mod_names if dep in module_to_job]
 
         # actually (try to) submit job
@@ -113,12 +116,13 @@ def build_easyconfigs_in_parallel(build_command, easyconfigs, output_dir='easybu
     return jobs
 
 
-def submit_jobs(ordered_ecs, cmd_line_opts, testing=False):
+def submit_jobs(ordered_ecs, cmd_line_opts, testing=False, prepare_first=True):
     """
     Submit jobs.
     @param ordered_ecs: list of easyconfigs, in the order they should be processed
     @param cmd_line_opts: list of command line options (in 'longopt=value' form)
     @param testing: If `True`, skip actual job submission
+    @param prepare_first: prepare by runnning fetch step first for each easyconfig
     """
     curdir = os.getcwd()
 
@@ -131,13 +135,12 @@ def submit_jobs(ordered_ecs, cmd_line_opts, testing=False):
     # compose string with command line options, properly quoted and with '%' characters escaped
     opts_str = subprocess.list2cmdline(opts).replace('%', '%%')
 
-    command = "unset TMPDIR && cd %s && eb %%(spec)s %s --testoutput=%%(output_dir)s" % (curdir, opts_str)
+    command = "unset TMPDIR && cd %s && eb %%(spec)s %s %%(add_opts)s --testoutput=%%(output_dir)s" % (curdir, opts_str)
     _log.info("Command template for jobs: %s" % command)
-    job_info_lines = []
     if testing:
         _log.debug("Skipping actual submission of jobs since testing mode is enabled")
     else:
-        build_easyconfigs_in_parallel(command, ordered_ecs)
+        return build_easyconfigs_in_parallel(command, ordered_ecs, prepare_first=prepare_first)
 
 
 def create_job(job_backend, build_command, easyconfig, output_dir='easybuild-build'):
@@ -167,10 +170,16 @@ def create_job(job_backend, build_command, easyconfig, output_dir='easybuild-bui
     ec_tuple = (easyconfig['ec']['name'], det_full_ec_version(easyconfig['ec']))
     name = '-'.join(ec_tuple)
 
+    # determine whether additional options need to be passed to the 'eb' command
+    add_opts = ''
+    if easyconfig['hidden']:
+        add_opts += ' --hidden'
+
     # create command based on build_command template
     command = build_command % {
-        'spec': easyconfig['spec'],
+        'add_opts': add_opts,
         'output_dir': os.path.join(os.path.abspath(output_dir), name),
+        'spec': easyconfig['spec'],
     }
 
     # just use latest build stats
@@ -180,6 +189,9 @@ def create_job(job_backend, build_command, easyconfig, output_dir='easybuild-bui
     if buildstats:
         previous_time = buildstats[-1]['build_time']
         extra['hours'] = int(math.ceil(previous_time * 2 / 60))
+
+    if build_option('job_cores'):
+        extra['cores'] = build_option('job_cores')
 
     job = job_backend.make_job(command, name, easybuild_vars, **extra)
     job.module = easyconfig['ec'].full_mod_name

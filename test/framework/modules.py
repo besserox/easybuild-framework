@@ -1,11 +1,11 @@
 ##
-# Copyright 2012-2015 Ghent University
+# Copyright 2012-2016 Ghent University
 #
 # This file is part of EasyBuild,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
 # with support of Ghent University (http://ugent.be/hpc),
 # the Flemish Supercomputer Centre (VSC) (https://vscentrum.be/nl/en),
-# the Hercules foundation (http://www.herculesstichting.be/in_English)
+# Flemish Research Foundation (FWO) (http://www.fwo.be/en)
 # and the Department of Economy, Science and Innovation (EWI) (http://www.ewi-vlaanderen.be/en).
 #
 # http://github.com/hpcugent/easybuild
@@ -46,7 +46,7 @@ from easybuild.tools.modules import Lmod, get_software_root, get_software_versio
 
 
 # number of modules included for testing purposes
-TEST_MODULES_COUNT = 63
+TEST_MODULES_COUNT = 76
 
 
 class ModulesTest(EnhancedTestCase):
@@ -110,12 +110,28 @@ class ModulesTest(EnhancedTestCase):
         """Test if testing for module existence works."""
         self.init_testmods()
         self.assertEqual(self.testmods.exist(['OpenMPI/1.6.4-GCC-4.6.4']), [True])
+        self.assertEqual(self.testmods.exist(['OpenMPI/1.6.4-GCC-4.6.4'], skip_avail=True), [True])
         self.assertEqual(self.testmods.exist(['foo/1.2.3']), [False])
-        # exists should not return True for incomplete module names
-        self.assertEqual(self.testmods.exist(['GCC']), [False])
+        self.assertEqual(self.testmods.exist(['foo/1.2.3'], skip_avail=True), [False])
 
         # exists works on hidden modules
         self.assertEqual(self.testmods.exist(['toy/.0.0-deps']), [True])
+        self.assertEqual(self.testmods.exist(['toy/.0.0-deps'], skip_avail=True), [True])
+
+        # also partial module names work
+        self.assertEqual(self.testmods.exist(['OpenMPI']), [True])
+        self.assertEqual(self.testmods.exist(['OpenMPI'], skip_avail=True), [True])
+        # but this doesn't...
+        self.assertEqual(self.testmods.exist(['OpenMPI/1.6.4']), [False])
+        self.assertEqual(self.testmods.exist(['OpenMPI/1.6.4'], skip_avail=True), [False])
+
+        # exists works on hidden modules in Lua syntax (only with Lmod)
+        if isinstance(self.testmods, Lmod):
+            test_modules_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'modules'))
+            # make sure only the .lua module file is there, otherwise this test doesn't work as intended
+            self.assertTrue(os.path.exists(os.path.join(test_modules_path, 'bzip2', '.1.0.6.lua')))
+            self.assertFalse(os.path.exists(os.path.join(test_modules_path, 'bzip2', '.1.0.6')))
+            self.assertEqual(self.testmods.exist(['bzip2/.1.0.6']), [True])
 
         # exists also works on lists of module names
         # list should be sufficiently long, since for short lists 'show' is always used
@@ -123,7 +139,8 @@ class ModulesTest(EnhancedTestCase):
                      'ScaLAPACK/1.8.0-gompi-1.1.0-no-OFED',
                      'ScaLAPACK/1.8.0-gompi-1.1.0-no-OFED-ATLAS-3.8.4-LAPACK-3.4.0-BLACS-1.1',
                      'Compiler/GCC/4.7.2/OpenMPI/1.6.4', 'toy/.0.0-deps']
-        self.assertEqual(self.testmods.exist(mod_names), [True, False, False, False, True, True, True])
+        self.assertEqual(self.testmods.exist(mod_names), [True, False, True, False, True, True, True])
+        self.assertEqual(self.testmods.exist(mod_names, skip_avail=True), [True, False, True, False, True, True, True])
 
     def test_load(self):
         """ test if we load one module it is in the loaded_modules """
@@ -344,11 +361,16 @@ class ModulesTest(EnhancedTestCase):
         # force reset of any singletons by reinitiating config
         init_config()
 
+        # make sure $LMOD_DEFAULT_MODULEPATH, since Lmod picks it up and tweaks $MODULEPATH to match it
+        if 'LMOD_DEFAULT_MODULEPATH' in os.environ:
+            del os.environ['LMOD_DEFAULT_MODULEPATH']
+
         os.environ['MODULEPATH'] = os.path.join(self.test_prefix, 'Core')
         modtool = modules_tool()
 
         if isinstance(modtool, Lmod):
-            load_err_msg = "cannot[\s\n]*be[\s\n]*loaded"
+            # GCC/4.6.3 is nowhere to be found (in $MODULEPATH)
+            load_err_msg = r"The following module\(s\) are unknown"
         else:
             load_err_msg = "Unable to locate a modulefile"
 
@@ -361,6 +383,9 @@ class ModulesTest(EnhancedTestCase):
         # OpenMPI/1.6.4 becomes available after loading GCC/4.7.2 module
         modtool.load(['OpenMPI/1.6.4'])
         modtool.purge()
+
+        if 'LMOD_DEFAULT_MODULEPATH' in os.environ:
+            del os.environ['LMOD_DEFAULT_MODULEPATH']
 
         # reset $MODULEPATH, obtain new ModulesTool instance,
         # which should not remember anything w.r.t. previous $MODULEPATH value
@@ -375,6 +400,13 @@ class ModulesTest(EnhancedTestCase):
         modtool.load(['GCC/4.7.2'])
 
         # OpenMPI/1.6.4 is *not* available with current $MODULEPATH (loaded GCC/4.7.2 was not a hierarchical module)
+        if isinstance(modtool, Lmod):
+            # OpenMPI/1.6.4 exists, but is not available for load;
+            # exact error message depends on Lmod version
+            load_err_msg = r"These module\(s\) exist but cannot be|The following module\(s\) are unknown"
+        else:
+            load_err_msg = "Unable to locate a modulefile"
+
         self.assertErrorRegex(EasyBuildError, load_err_msg, modtool.load, ['OpenMPI/1.6.4'])
 
 
