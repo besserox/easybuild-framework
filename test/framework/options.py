@@ -4183,6 +4183,97 @@ class CommandLineOptionsTest(EnhancedTestCase):
             res = run_shell_cmd(test_cmd)
         self.assertRegex(res.output, tc_regex)
 
+    def test_include_job_backends(self):
+        """Test --include-job-backends."""
+
+        # make sure that calling out to 'eb' will work by restoring $PATH & $PYTHONPATH
+        self.restore_env_path_pythonpath()
+
+        topdir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        # try and make sure 'eb' is available via $PATH if it isn't yet
+        path = self.env_path
+        if which('eb') is None:
+            path = '%s:%s' % (topdir, path)
+
+        # try and make sure top-level directory is in $PYTHONPATH if it isn't yet
+        pythonpath = self.env_pythonpath
+        with self.mocked_stdout_stderr():
+            res = run_shell_cmd("cd {self.test_prefix}; python -c 'import easybuild.framework'", fail_on_error=False)
+        if res.exit_code != 0:
+            pythonpath = '%s:%s' % (topdir, pythonpath)
+
+        fd, dummylogfn = tempfile.mkstemp(prefix='easybuild-dummy', suffix='.log')
+        os.close(fd)
+
+        # clear log
+        write_file(self.logfile, '')
+
+        job_backend_regex = re.compile(r'^\s*TestIncludedJobBackend', re.M)
+
+        # TestIncludedJobBackend job backend is not available by default
+        args = ['--avail-job-backends']
+        test_cmd = self.mk_eb_test_cmd(args)
+        with self.mocked_stdout_stderr():
+            res = run_shell_cmd(test_cmd)
+        self.assertNotRegex(res.output, job_backend_regex)
+
+        # include extra test job backend
+        job_backend_txt = '\n'.join([
+            'from easybuild.tools.job.backend import JobBackend',
+            'class TestIncludedJobBackend(JobBackend):',
+            '   pass',
+        ])
+        write_file(os.path.join(self.test_prefix, 'test_job_backend.py'), job_backend_txt)
+
+        # clear log
+        write_file(self.logfile, '')
+
+        args.append('--include-job-backends=%s/*.py' % self.test_prefix)
+        test_cmd = self.mk_eb_test_cmd(args)
+        with self.mocked_stdout_stderr():
+            res = run_shell_cmd(test_cmd)
+        self.assertRegex(res.output, job_backend_regex)
+
+    def test_use_included_job_backend(self):
+        """Test using an included job backend."""
+        # try selecting the added job backend
+        fd, dummylogfn = tempfile.mkstemp(prefix='easybuild-dummy', suffix='.log')
+        os.close(fd)
+
+        # include extra test JobBackend
+        job_backend_txt = '\n'.join([
+            'import os',
+            'from easybuild.tools.job.backend import JobBackend',
+            'class AnotherTestIncludedJobBackend(JobBackend):',
+            '   def det_full_module_name(self, ec):',
+            "       return os.path.join(ec['name'], ec['version'])",
+        ])
+        write_file(os.path.join(self.test_prefix, 'test_job_backend.py'), job_backend_txt)
+
+        topdir = os.path.abspath(os.path.dirname(__file__))
+        eb_file = os.path.join(topdir, 'easyconfigs', 'test_ecs', 't', 'toy', 'toy-0.0.eb')
+        args = [
+            '--unittest-file=%s' % self.logfile,
+            '--job=AnotherTestIncludedJobBackend',
+            '--force',
+            eb_file,
+        ]
+
+        # selecting a job backend that doesn't exist leads to 'invalid choice'
+        error_regex = "Selected job backend \'AnotherTestIncludedJobBackend\' is unknown"
+        with self.mocked_stdout_stderr():
+            self.assertErrorRegex(EasyBuildError, error_regex, self.eb_main, args, logfile=dummylogfn,
+                                  raise_error=True, raise_systemexit=True)
+
+        args.append('--include-job-backends=%s/*.py' % self.test_prefix)
+        with self.mocked_stdout_stderr():
+            self.eb_main(args, logfile=dummylogfn, do_build=True, raise_error=True, raise_systemexit=True, verbose=True)
+        toy_mod = os.path.join(self.test_installpath, 'modules', 'all', 'toy', '0.0')
+        if get_module_syntax() == 'Lua':
+            toy_mod += '.lua'
+        self.assertExists(toy_mod)
+
     def test_cleanup_tmpdir(self):
         """Test --cleanup-tmpdir."""
         topdir = os.path.dirname(os.path.abspath(__file__))
